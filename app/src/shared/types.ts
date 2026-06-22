@@ -1,16 +1,25 @@
 // ═══ Graph Schema (Demo: R-D01) ══════════════════════════════════
+// Inspired by Stello's session topology — nodes form a hierarchical
+// graph with parent/child nesting and cross-references.
 
 export interface ProjectGraph {
-  version: '0.1.0'
+  version: '0.2.0'
   projectId: string
   projectName: string
   projectType: ProjectType
   analyzedAt: string
   analysisStatus: AnalysisStatus
   analysisError: string | null
+  topology: TopologyMeta
   nodes: FunctionalNode[]
   edges: FunctionalEdge[]
   fileIndex: FileEntry[]
+}
+
+export interface TopologyMeta {
+  rootIds: string[]
+  maxDepth: number
+  totalNodes: number
 }
 
 export type ProjectType = 'nextjs-app' | 'nextjs-pages'
@@ -24,6 +33,12 @@ export interface FunctionalNode {
   status: NodeStatus
   description: string
   summary: string
+  // Topology (Stello-inspired)
+  parentId: string | null
+  children: string[]
+  refs: string[]
+  depth: number
+  // Content
   linkedFiles: LinkedFile[]
   upstream: string[]
   downstream: string[]
@@ -266,6 +281,79 @@ export interface CloudAuthResponse {
   userId: string
 }
 
+// ═══ Project Memory (Stello-inspired SharedMemoryStore) ══════════
+// Three-layer context: Project Memory (persistent) + Node Context
+// (per-node) + Session Insight (ephemeral). Adapts Stello's
+// systemPrompt/insight/memory slots to our function-map model.
+
+export interface MemoryEntry {
+  slug: string
+  body: string
+  category: MemoryCategory
+  nodeId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type MemoryCategory =
+  | 'project'    // project-level knowledge (architecture decisions, conventions)
+  | 'node'       // per-node understanding (what this feature does, known issues)
+  | 'session'    // ephemeral current-session insight (debugging trail, recent changes)
+  | 'user'       // user preferences and habits
+
+export interface MemoryStore {
+  list(category?: MemoryCategory): Promise<MemoryEntry[]>
+  get(slug: string): Promise<MemoryEntry | null>
+  upsert(slug: string, body: string, category: MemoryCategory, nodeId?: string | null): Promise<void>
+  remove(slug: string): Promise<void>
+  listByNode(nodeId: string): Promise<MemoryEntry[]>
+  renderContext(nodeId?: string): Promise<string>
+}
+
+// ═══ Topology Rendering ═════════════════════════════════════════
+// Render the function map as structured context for LLM injection.
+// Adapts Stello's renderTopologyMarkdown — the AI sees the map
+// as a labeled tree with "← YOU ARE HERE" on the focused node.
+
+export interface TopologyRenderOptions {
+  focusNodeId?: string
+  maxDepth?: number
+  includeFiles?: boolean
+  includeMemory?: boolean
+}
+
+// ═══ Engine Layers (Stello-inspired) ═════════════════════════════
+// Refines our architecture into proper layers:
+// AnalysisRunner → ProjectEngine → SessionOrchestrator → ProjectAgent
+
+export interface ProjectEngine {
+  analyze(projectPath: string): Promise<ProjectGraph>
+  getGraph(): ProjectGraph | null
+  getNodeContext(nodeId: string): Promise<NodeContext | null>
+  getMemory(): MemoryStore
+  renderTopology(options?: TopologyRenderOptions): string
+}
+
+export interface SessionOrchestrator {
+  currentSessionId: string
+  focusNodeId: string | null
+  setFocus(nodeId: string | null): void
+  getAssembledContext(): Promise<string>
+}
+
+// ═══ Branch Guard (Stello SplitGuard-inspired) ═══════════════════
+// Controls when agent execution can branch into sub-tasks.
+
+export interface BranchGuardConfig {
+  minSteps: number
+  cooldownSteps: number
+}
+
+export interface BranchCheckResult {
+  canBranch: boolean
+  reason?: string
+}
+
 // ═══ API Response Types ══════════════════════════════════════════
 
 export interface GraphResponse {
@@ -319,6 +407,14 @@ export const IPC = {
   CONFIRM_EXECUTION: 'engine:confirmExecution',
   GET_EXECUTION_STATUS: 'engine:getExecutionStatus',
   GET_AGENT_FLOW_LOG: 'engine:getAgentFlowLog',
+  // Memory
+  MEMORY_LIST: 'memory:list',
+  MEMORY_GET: 'memory:get',
+  MEMORY_UPSERT: 'memory:upsert',
+  MEMORY_REMOVE: 'memory:remove',
+  MEMORY_BY_NODE: 'memory:byNode',
+  RENDER_TOPOLOGY: 'engine:renderTopology',
+  GET_ASSEMBLED_CONTEXT: 'engine:getAssembledContext',
   // M3
   REPORT_ERROR: 'engine:reportError',
   BUILD_DEBUG_CONTEXT: 'engine:buildDebugContext',

@@ -3,9 +3,11 @@ import { join } from 'path'
 import { v4 as uuid } from 'uuid'
 import { is } from '@electron-toolkit/utils'
 import { analyzeProject } from './engine/graph/builder'
+import { renderTopologyMarkdown } from './engine/graph/topology-render'
 import { buildNodeContext, buildProjectContext } from './engine/context'
 import { buildDebugContext, createBugFixJob, diagnoseBug } from './engine/debug'
 import { createJob, getJob, updateJob, completeJob, failJob } from './engine/jobs'
+import { FileMemoryStore } from './engine/memory'
 import type {
   ProjectGraph,
   AnalysisProgress,
@@ -20,6 +22,7 @@ import { IPC } from '../shared/types'
 
 const graphs = new Map<string, ProjectGraph>()
 const bugFixJobs = new Map<string, BugFixJob>()
+let memoryStore: FileMemoryStore | null = null
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -80,8 +83,13 @@ function registerIpcHandlers(): void {
         })
         win?.webContents.send(IPC.PROGRESS, progress)
       },
-      onComplete(graph: ProjectGraph) {
+      async onComplete(graph: ProjectGraph) {
         graphs.set(graph.projectId, graph)
+        // Initialize memory store for this project
+        const memPath = join(projectPath, '.projectos', 'memory.json')
+        memoryStore = new FileMemoryStore(memPath)
+        await memoryStore.load()
+
         completeJob(jobId)
         win?.webContents.send(IPC.COMPLETE, {
           jobId,
@@ -161,6 +169,47 @@ function registerIpcHandlers(): void {
     const graph = graphs.get(projectId)
     if (!graph) return null
     return buildProjectContext(graph)
+  })
+
+  // ═══ Memory APIs (Stello-inspired) ════════════════════════════════
+
+  ipcMain.handle(IPC.MEMORY_LIST, async (_event, category?: string) => {
+    if (!memoryStore) return []
+    return memoryStore.list(category as any)
+  })
+
+  ipcMain.handle(IPC.MEMORY_GET, async (_event, slug: string) => {
+    if (!memoryStore) return null
+    return memoryStore.get(slug)
+  })
+
+  ipcMain.handle(IPC.MEMORY_UPSERT, async (_event, slug: string, body: string, category: string, nodeId?: string) => {
+    if (!memoryStore) return
+    return memoryStore.upsert(slug, body, category as any, nodeId)
+  })
+
+  ipcMain.handle(IPC.MEMORY_REMOVE, async (_event, slug: string) => {
+    if (!memoryStore) return
+    return memoryStore.remove(slug)
+  })
+
+  ipcMain.handle(IPC.MEMORY_BY_NODE, async (_event, nodeId: string) => {
+    if (!memoryStore) return []
+    return memoryStore.listByNode(nodeId)
+  })
+
+  ipcMain.handle(IPC.RENDER_TOPOLOGY, async (_event, projectId: string, focusNodeId?: string) => {
+    const graph = graphs.get(projectId)
+    if (!graph) return ''
+    return renderTopologyMarkdown(graph, { focusNodeId, includeFiles: true })
+  })
+
+  ipcMain.handle(IPC.GET_ASSEMBLED_CONTEXT, async (_event, projectId: string, nodeId?: string) => {
+    const graph = graphs.get(projectId)
+    if (!graph) return ''
+    const topology = renderTopologyMarkdown(graph, { focusNodeId: nodeId, includeFiles: !!nodeId })
+    const memory = memoryStore ? await memoryStore.renderContext(nodeId) : ''
+    return `<topology>\n${topology}\n</topology>\n\n${memory}`
   })
 
   // ═══ M2 Agent APIs (stubs) ═══════════════════════════════════════

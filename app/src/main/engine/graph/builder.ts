@@ -186,14 +186,26 @@ export async function analyzeProject(
     const existing = await loadExistingGraph(projectPath)
     const projectId = existing?.projectId ?? uuid()
 
+    // Populate topology fields on nodes (Stello-inspired)
+    for (const node of nodes) {
+      if (!node.parentId) node.parentId = null
+      if (!node.children) node.children = []
+      if (!node.refs) node.refs = []
+      if (!node.depth) node.depth = 0
+    }
+
+    const rootIds = nodes.filter(n => n.parentId === null).map(n => n.id)
+    const maxDepth = Math.max(0, ...nodes.map(n => n.depth))
+
     const graphWithoutIndex = {
-      version: '0.1.0' as const,
+      version: '0.2.0' as const,
       projectId,
       projectName: pkg?.name ?? path.basename(projectPath),
       projectType,
       analyzedAt: new Date().toISOString(),
       analysisStatus: 'complete' as const,
       analysisError: null,
+      topology: { rootIds, maxDepth, totalNodes: nodes.length },
       nodes,
       edges,
     }
