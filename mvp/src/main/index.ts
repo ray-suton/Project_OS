@@ -8,11 +8,14 @@ import type {
   AnalysisProgress, JobStatus
 } from '../shared/types'
 import { analyzeProject } from './engine/graph-builder'
+import { renderTopologyMarkdown } from './engine/topology-render'
+import { FileMemoryStore } from './engine/memory-store'
 
 let mainWindow: BrowserWindow | null = null
 
 const jobs = new Map<string, JobStatus>()
 const graphs = new Map<string, ProjectGraph>()
+let memoryStore: FileMemoryStore | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -82,13 +85,18 @@ function registerIpcHandlers(): void {
         }
         mainWindow?.webContents.send(IPC.PROGRESS, progress)
       },
-      onComplete: (graph: ProjectGraph) => {
+      onComplete: async (graph: ProjectGraph) => {
         const job = jobs.get(jobId)
         if (job) {
           job.status = 'complete'
           job.progress = 100
         }
         graphs.set(graph.projectId, graph)
+
+        const memPath = join(projectPath, '.projectos', 'memory.json')
+        memoryStore = new FileMemoryStore(memPath)
+        await memoryStore.load()
+
         mainWindow?.webContents.send(IPC.COMPLETE, {
           jobId,
           projectId: graph.projectId,
@@ -148,6 +156,49 @@ function registerIpcHandlers(): void {
     }
     return { success: false, error: { code: 'NODE_NOT_FOUND', message: '节点不存在' } }
   })
+
+  // ═══ Memory APIs (Stello-inspired) ════════════════════════════════
+
+  ipcMain.handle(IPC.MEMORY_LIST, async (_event, category?: string) => {
+    if (!memoryStore) return []
+    return memoryStore.list(category as any)
+  })
+
+  ipcMain.handle(IPC.MEMORY_GET, async (_event, slug: string) => {
+    if (!memoryStore) return null
+    return memoryStore.get(slug)
+  })
+
+  ipcMain.handle(IPC.MEMORY_UPSERT, async (_event, slug: string, body: string, category: string, nodeId?: string) => {
+    if (!memoryStore) return
+    return memoryStore.upsert(slug, body, category as any, nodeId)
+  })
+
+  ipcMain.handle(IPC.MEMORY_REMOVE, async (_event, slug: string) => {
+    if (!memoryStore) return
+    return memoryStore.remove(slug)
+  })
+
+  ipcMain.handle(IPC.MEMORY_BY_NODE, async (_event, nodeId: string) => {
+    if (!memoryStore) return []
+    return memoryStore.listByNode(nodeId)
+  })
+
+  // ═══ Topology APIs ════════════════════════════════════════════════
+
+  ipcMain.handle(IPC.RENDER_TOPOLOGY, async (_event, projectId: string, focusNodeId?: string) => {
+    const graph = graphs.get(projectId)
+    if (!graph) return ''
+    return renderTopologyMarkdown(graph, { focusNodeId, includeFiles: true })
+  })
+
+  ipcMain.handle(IPC.GET_ASSEMBLED_CONTEXT, async (_event, projectId: string, nodeId?: string) => {
+    const graph = graphs.get(projectId)
+    if (!graph) return ''
+    const topology = renderTopologyMarkdown(graph, { focusNodeId: nodeId, includeFiles: !!nodeId })
+    const memory = memoryStore ? await memoryStore.renderContext(nodeId) : ''
+    return `<topology>\n${topology}\n</topology>\n\n${memory}`
+  })
 }
 
 function toGraphResponse(graph: ProjectGraph): GraphResponse {
@@ -156,8 +207,10 @@ function toGraphResponse(graph: ProjectGraph): GraphResponse {
     projectName: graph.projectName,
     projectType: graph.projectType,
     analysisStatus: graph.analysisStatus,
+    topology: graph.topology,
     nodes: graph.nodes,
-    edges: graph.edges
+    edges: graph.edges,
+    fileIndex: graph.fileIndex
   }
 }
 

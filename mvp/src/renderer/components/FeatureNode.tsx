@@ -10,6 +10,7 @@ interface FeatureNodeData {
   confidence: number
   selected: boolean
   color: string
+  childCount: number
 }
 
 export function FeatureNode({ data }: NodeProps) {
@@ -42,6 +43,7 @@ export function FeatureNode({ data }: NodeProps) {
       <div className="node-footer">
         <span className="node-files">{d.fileCount} files</span>
         <span className="node-confidence">{Math.round(d.confidence * 100)}%</span>
+        {d.childCount > 0 && <span className="node-drill-indicator">▶</span>}
       </div>
 
       <Handle type="source" position={Position.Right} className="node-handle" />

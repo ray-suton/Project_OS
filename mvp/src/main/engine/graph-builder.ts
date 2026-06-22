@@ -93,14 +93,25 @@ export async function analyzeProject(
       projectId = uuid()
     }
 
+    for (const node of nodes) {
+      if (!node.parentId) node.parentId = null
+      if (!node.children) node.children = []
+      if (!node.refs) node.refs = []
+      if (!node.depth) node.depth = 0
+    }
+
+    const rootIds = nodes.filter(n => n.parentId === null).map(n => n.id)
+    const maxDepth = Math.max(0, ...nodes.map(n => n.depth))
+
     const graph: ProjectGraph = {
-      version: '0.1.0',
+      version: '0.2.0',
       projectId,
       projectName: pkg.name,
       projectType,
       analyzedAt: new Date().toISOString(),
       analysisStatus: 'complete',
       analysisError: null,
+      topology: { rootIds, maxDepth, totalNodes: nodes.length },
       nodes,
       edges,
       fileIndex

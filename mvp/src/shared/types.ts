@@ -1,14 +1,21 @@
 export interface ProjectGraph {
-  version: '0.1.0'
+  version: '0.2.0'
   projectId: string
   projectName: string
   projectType: ProjectType
   analyzedAt: string
   analysisStatus: AnalysisStatus
   analysisError: string | null
+  topology: TopologyMeta
   nodes: FunctionalNode[]
   edges: FunctionalEdge[]
   fileIndex: FileEntry[]
+}
+
+export interface TopologyMeta {
+  rootIds: string[]
+  maxDepth: number
+  totalNodes: number
 }
 
 export type ProjectType = 'nextjs-app' | 'nextjs-pages'
@@ -22,6 +29,10 @@ export interface FunctionalNode {
   status: NodeStatus
   description: string
   summary: string
+  parentId: string | null
+  children: string[]
+  refs: string[]
+  depth: number
   linkedFiles: LinkedFile[]
   upstream: string[]
   downstream: string[]
@@ -115,8 +126,10 @@ export interface GraphResponse {
   projectName: string
   projectType: ProjectType
   analysisStatus: AnalysisStatus
+  topology: TopologyMeta
   nodes: FunctionalNode[]
   edges: FunctionalEdge[]
+  fileIndex: FileEntry[]
 }
 
 export interface NodeDetailResponse {
@@ -148,6 +161,59 @@ export interface JobStatus {
   error: string | null
 }
 
+// ═══ Memory (Stello-inspired) ══════════════════════════════════
+
+export interface MemoryEntry {
+  slug: string
+  body: string
+  category: MemoryCategory
+  nodeId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type MemoryCategory =
+  | 'project'
+  | 'node'
+  | 'session'
+  | 'user'
+
+export interface MemoryStore {
+  list(category?: MemoryCategory): Promise<MemoryEntry[]>
+  get(slug: string): Promise<MemoryEntry | null>
+  upsert(slug: string, body: string, category: MemoryCategory, nodeId?: string | null): Promise<void>
+  remove(slug: string): Promise<void>
+  listByNode(nodeId: string): Promise<MemoryEntry[]>
+  renderContext(nodeId?: string): Promise<string>
+}
+
+// ═══ Topology Rendering ═════════════════════════════════════════
+
+export interface TopologyRenderOptions {
+  focusNodeId?: string
+  maxDepth?: number
+  includeFiles?: boolean
+  includeMemory?: boolean
+}
+
+// ═══ C4 Navigation ══════════════════════════════════════════════
+
+export type C4Level = 'system' | 'container' | 'component' | 'code'
+
+export interface BreadcrumbEntry {
+  level: C4Level
+  label: string
+  id: string
+}
+
+export interface NavigationState {
+  level: C4Level
+  path: BreadcrumbEntry[]
+  focusId: string | null
+}
+
+// ═══ IPC Channels ════════════════════════════════════════════════
+
 export const IPC = {
   ANALYZE: 'engine:analyze',
   GET_JOB_STATUS: 'engine:getJobStatus',
@@ -157,5 +223,12 @@ export const IPC = {
   PROGRESS: 'engine:progress',
   COMPLETE: 'engine:complete',
   ERROR: 'engine:error',
-  OPEN_PROJECT_DIALOG: 'dialog:openProject'
+  OPEN_PROJECT_DIALOG: 'dialog:openProject',
+  MEMORY_LIST: 'memory:list',
+  MEMORY_GET: 'memory:get',
+  MEMORY_UPSERT: 'memory:upsert',
+  MEMORY_REMOVE: 'memory:remove',
+  MEMORY_BY_NODE: 'memory:byNode',
+  RENDER_TOPOLOGY: 'engine:renderTopology',
+  GET_ASSEMBLED_CONTEXT: 'engine:getAssembledContext',
 } as const

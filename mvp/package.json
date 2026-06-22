@@ -9,6 +9,7 @@
     "preview": "electron-vite preview"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@xyflow/react": "^12.6.0",

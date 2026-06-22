@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
 import type {
   AnalysisProgress, GraphResponse, NodeDetailResponse,
-  AnalyzeResult, JobStatus
+  AnalyzeResult, JobStatus, MemoryEntry
 } from '../shared/types'
 
 const api = {
@@ -21,6 +21,30 @@ const api = {
   getNodeDetail: (nodeId: string): Promise<NodeDetailResponse> =>
     ipcRenderer.invoke(IPC.GET_NODE_DETAIL, nodeId),
 
+  // Memory
+  memoryList: (category?: string): Promise<MemoryEntry[]> =>
+    ipcRenderer.invoke(IPC.MEMORY_LIST, category),
+
+  memoryGet: (slug: string): Promise<MemoryEntry | null> =>
+    ipcRenderer.invoke(IPC.MEMORY_GET, slug),
+
+  memoryUpsert: (slug: string, body: string, category: string, nodeId?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.MEMORY_UPSERT, slug, body, category, nodeId),
+
+  memoryRemove: (slug: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.MEMORY_REMOVE, slug),
+
+  memoryByNode: (nodeId: string): Promise<MemoryEntry[]> =>
+    ipcRenderer.invoke(IPC.MEMORY_BY_NODE, nodeId),
+
+  // Topology
+  renderTopology: (projectId: string, focusNodeId?: string): Promise<string> =>
+    ipcRenderer.invoke(IPC.RENDER_TOPOLOGY, projectId, focusNodeId),
+
+  getAssembledContext: (projectId: string, nodeId?: string): Promise<string> =>
+    ipcRenderer.invoke(IPC.GET_ASSEMBLED_CONTEXT, projectId, nodeId),
+
+  // Events
   onProgress: (callback: (progress: AnalysisProgress) => void): (() => void) => {
     const handler = (_event: any, progress: AnalysisProgress) => callback(progress)
     ipcRenderer.on(IPC.PROGRESS, handler)
